@@ -1,36 +1,37 @@
 import { Home, Compose, Inbox, Settings, Lock } from "./components.js";
 
+
 export class Router {
   constructor(mountEl){
     this.mountEl = mountEl;
     this.routes = {
-      "/": () => Home(),
+      "/":        () => Home(),
       "/compose": () => Compose(),
-      "/inbox": () => Inbox(this.getVents()),
-      "/settings": () => Settings(this.hasPasscode()),
-      "/lock": () => this.renderLock(),
+      "/inbox":   () => Inbox(this.getVents()),
+      "/settings":() => Settings(this.hasPasscode()),
+      "/lock":    () => this.renderLock(),
     };
   }
 
-  // ---- Auth helpers ----
+  /* ---------- Auth helpers ---------- */
   hasPasscode(){ return !!localStorage.getItem("vl_pass"); }
   isAuthed(){ return sessionStorage.getItem("vl_authed") === "1"; }
-  setAuthed(v){ v ? sessionStorage.setItem("vl_authed","1") : sessionStorage.removeItem("vl_authed"); }
+  setAuthed(v){ v ? sessionStorage.setItem("vl_authed","1")
+                 : sessionStorage.removeItem("vl_authed"); }
 
-  // ---- Vents storage ----
+  /* ---------- Vents storage ---------- */
   getVents(){
     try { return JSON.parse(localStorage.getItem("vents") || "[]"); }
     catch { return []; }
   }
   saveVents(list){ localStorage.setItem("vents", JSON.stringify(list)); }
 
+  /* ---------- Router lifecycle ---------- */
   start(){
     window.addEventListener("hashchange", () => this.render());
-    // On first load, route to lock if passcode exists and not authed
     if (this.hasPasscode() && !this.isAuthed()) location.hash = "#/lock";
     this.render();
   }
-
   getPath(){
     const hash = location.hash.replace(/^#/, "");
     return hash || "/";
@@ -39,20 +40,18 @@ export class Router {
   render(){
     const path = this.getPath();
 
-    // Gate all routes behind lock when passcode exists
+    // Require unlock when passcode exists
     if (this.hasPasscode() && !this.isAuthed() && path !== "/lock"){
       location.hash = "#/lock";
       return;
     }
 
-    const view = this.routes[path] ? this.routes[path]() : Home();
-    // Special case lock since it needs dynamic digits
-    if (path !== "/lock") this.mountEl.innerHTML = view;
+    const html = this.routes[path] ? this.routes[path]() : Home();
+    if (path !== "/lock") this.mountEl.innerHTML = html; // lock renders internally
     this.wireActions(path);
   }
 
   renderLock(){
-    // If no pass set, show create form
     const needsCreate = !this.hasPasscode();
     this.mountEl.innerHTML = Lock(needsCreate, 0);
     return "";
@@ -60,26 +59,62 @@ export class Router {
 
   navigate(path){ location.hash = `#${path}`; }
 
+  /* ---------- Wire actions per view ---------- */
   wireActions(path){
-    // Compose form
+    // Compose
     if (path === "/compose"){
       const form = document.getElementById("vent-form");
       const textarea = document.getElementById("vent-text");
       const clearBtn = document.getElementById("clear-vent");
+      const sendBtn = document.getElementById("sendBtn");
+      const count = document.getElementById("charCount");
+      const MAX = 500;
+
+      const update = () => {
+        const len = (textarea?.value || "").length;
+        if (count) count.textContent = `${len}/${MAX}`;
+        if (sendBtn) sendBtn.disabled = len === 0;
+        if (textarea){
+          textarea.style.height = "auto";
+          textarea.style.height = textarea.scrollHeight + "px";
+        }
+      };
+
+      textarea?.addEventListener("input", update);
+      textarea?.addEventListener("keydown", (e)=>{
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !sendBtn?.disabled){
+          form?.requestSubmit();
+        }
+      });
+      clearBtn?.addEventListener("click", ()=>{
+        if (!textarea) return;
+        textarea.value = "";
+        update();
+      });
+      update();
+
       form?.addEventListener("submit", (e)=>{
         e.preventDefault();
         const text = (textarea?.value || "").trim();
-        if(!text) return alert("Type something first, chief.");
+        if (!text) return alert("Type something first, chief.");
         const list = this.getVents();
-        list.unshift({ text, ts: Date.now() });
+        list.unshift({
+          text,
+          ts: Date.now(),
+          prefs: {
+            video: !!document.getElementById("prefVideo")?.checked,
+            voice: !!document.getElementById("prefVoice")?.checked,
+            text:  !!document.getElementById("prefText")?.checked,
+            match: document.getElementById("prefMatch")?.value || ""
+          }
+        });
         this.saveVents(list);
-        textarea.value = "";
+        if (textarea) textarea.value = "";
         this.navigate("/inbox");
       });
-      clearBtn?.addEventListener("click", ()=> textarea && (textarea.value = ""));
     }
 
-    // Settings: set/change/lock
+    // Settings
     if (path === "/settings"){
       const $ = id => document.getElementById(id);
 
@@ -91,7 +126,7 @@ export class Router {
         if (!a || a !== b) return alert("Passcodes must match.");
         localStorage.setItem("vl_pass", a);
         alert("Passcode set.");
-        this.navigate("/lock"); // demonstrate lock
+        this.navigate("/lock");
       });
 
       const changeForm = $("change-pass");
@@ -113,9 +148,8 @@ export class Router {
       });
     }
 
-    // Lock screen: create or enter
+    // Lock screen
     if (path === "/lock"){
-      // Create flow
       const createForm = document.getElementById("create-pass-form");
       if (createForm){
         createForm.addEventListener("submit", (e)=>{
@@ -130,9 +164,10 @@ export class Router {
         return;
       }
 
-      // Enter flow (keypad)
+      // keypad flow
       const saved = localStorage.getItem("vl_pass") || "";
       let entry = "";
+
       const updateDots = ()=>{
         this.mountEl.innerHTML = Lock(false, entry.length);
         wireKeys();
@@ -141,17 +176,12 @@ export class Router {
         document.querySelectorAll(".key").forEach(btn=>{
           btn.addEventListener("click", ()=>{
             const k = btn.dataset.key;
-            if (k === "←") { entry = entry.slice(0,-1); updateDots(); }
-            else if (k === "✓") {
-              if (entry === saved){
-                this.setAuthed(true);
-                this.navigate("/");
-              } else {
-                entry = ""; updateDots();
-                alert("Wrong passcode.");
-              }
+            if (k === "←"){ entry = entry.slice(0, -1); updateDots(); }
+            else if (k === "✓"){
+              if (entry === saved){ this.setAuthed(true); this.navigate("/"); }
+              else { entry = ""; updateDots(); alert("Wrong passcode."); }
             } else {
-              if (entry.length < 4) { entry += String(k); updateDots(); }
+              if (entry.length < 4){ entry += String(k); updateDots(); }
             }
           });
         });
@@ -160,3 +190,9 @@ export class Router {
     }
   }
 }
+
+/* bootstrap */
+document.addEventListener("DOMContentLoaded", ()=>{
+  const outlet = document.getElementById("app");
+  new Router(outlet).start();
+});

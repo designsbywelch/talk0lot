@@ -4,11 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VENTLine — App Concept</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles/main.css" />
   </head>
   <body>
     <header class="site-header">
-      <h1>VENTLine</h1>
+      <h1 class="logo">VENT<span>Line</span></h1>
       <p class="tagline">From the streets to the suite — talk it out.</p>
       <nav class="top-nav">
         <a href="#/">Home</a>
@@ -18,13 +20,23 @@
       </nav>
     </header>
 
-    <main id="app"></main>
+    <main id="app" aria-live="polite"></main>
 
     <footer class="site-footer">
-      <small>© 2025 VENTLine</small>
+      <small>© 2025 VENTLine DesignsByWelch </small>
     </footer>
 
+    <!-- Router bootstraps on load -->
+    <!-- Boot the SPA -->
+<!-- Boot the SPA -->
+<script type="module">
+    import { Router } from "./src/scripts/router.js";
   
-    <script type="module" src="src/scripts/app.js"></script>
+    const outlet = document.getElementById("app");
+    new Router(outlet).start();
+    console.log("[VENTLine] router booted");
+  </script>
+  
+  
   </body>
 </html>
